@@ -18,7 +18,6 @@ set -o pipefail # Get exit code from process piped
 PLATFORM="$(readConfigKey "platform" "${USER_CONFIG_FILE}")"
 MODEL="$(readConfigKey "model" "${USER_CONFIG_FILE}")"
 LKM="$(readConfigKey "lkm" "${USER_CONFIG_FILE}")"
-SN="$(readConfigKey "sn" "${USER_CONFIG_FILE}")"
 LAYOUT="$(readConfigKey "layout" "${USER_CONFIG_FILE}")"
 KEYMAP="$(readConfigKey "keymap" "${USER_CONFIG_FILE}")"
 KERNEL="$(readConfigKey "kernel" "${USER_CONFIG_FILE}")"
@@ -34,8 +33,8 @@ KVER="$(readConfigKey "platforms.${PLATFORM}.productvers.\"${PRODUCTVER}\".kver"
 is_in_array "${PLATFORM}" "${KVER5L[@]}" && KVERP="${PRODUCTVER}-${KVER}" || KVERP="${KVER}"
 
 # Sanity check
-if [ -z "${PLATFORM}" ] || [ -z "${KVER}" ]; then
-  echo "ERROR: Configuration for Model ${MODEL} and Version ${PRODUCTVER} not found." >"${LOG_FILE}"
+if [ -z "${PLATFORM}" ] || [ -z "${KVER}" ] || [ -z "${MODEL}" ] || [ -z "${PRODUCTVER}" ]; then
+  echo "Error: Configuration for Model ${MODEL} and Version ${PRODUCTVER} not found." >"${LOG_FILE}"
   exit 1
 fi
 
@@ -48,7 +47,7 @@ PAT_HASH="$(readConfigKey "pathash" "${USER_CONFIG_FILE}")"
 
 # Sanity check
 if [ ! -f "${ORI_RDGZ_FILE}" ]; then
-  echo "ERROR: ${ORI_RDGZ_FILE} not found!" >"${LOG_FILE}"
+  echo "Error: ${ORI_RDGZ_FILE} not found!" >"${LOG_FILE}"
   exit 1
 fi
 
@@ -95,18 +94,17 @@ while IFS=': ' read -r KEY VALUE; do
 done < <(readConfigMap "synoinfo" "${USER_CONFIG_FILE}")
 
 # Patches (diff -Naru OLDFILE NEWFILE > xxx.patch)
-PATCHES=(
+PATCHS=(
   "ramdisk-etc-rc-*.patch"
   "ramdisk-init-script-*.patch"
   "ramdisk-post-init-script-*.patch"
 )
-
-for PE in "${PATCHES[@]}"; do
-  RET=2
-  MATCHED=0
+for PE in "${PATCHS[@]}"; do
+  RET=1
+  echo "Patching with ${PE}" >"${LOG_FILE}"
   for PF in ${PATCH_PATH}/${PE}; do
     [ ! -e "${PF}" ] && continue
-    MATCHED=1
+    echo "Patching with ${PF}" >>"${LOG_FILE}"
     (cd "${RAMDISK_PATH}" && busybox patch -p1 -i "${PF}") >>"${LOG_FILE}" 2>&1
     RET=$?
     [ ${RET} -eq 0 ] && break
@@ -134,6 +132,7 @@ echo "Create addons.sh" >>"${LOG_FILE}"
 chmod +x "${RAMDISK_PATH}/addons/addons.sh"
 
 # System Addons
+echo -e ">> Ramdisk: install addons"
 SYSADDONS="revert misc eudev disks localrss notify mountloader"
 if [ "${KVER:0:1}" = "5" ]; then
   SYSADDONS="redpill ${SYSADDONS}"
@@ -170,11 +169,8 @@ for ADDON in "${!ADDONS[@]}"; do
 done
 
 # Extract modules to ramdisk
+echo -e ">> Ramdisk: install modules"
 installModules "${PLATFORM}" "${KVERP}" "${!MODULES[@]}" || exit 1
-
-# Copying fake modprobe
-[ "${KVER:0:1}" = "4" ] && cp -f "${PATCH_PATH}/iosched-trampoline.sh" "${RAMDISK_PATH}/usr/sbin/modprobe"
-# Copying LKM to /usr/lib/modules
 gzip -dc "${LKMS_PATH}/rp-${PLATFORM}-${KVERP}-${LKM}.ko.gz" >"${RAMDISK_PATH}/usr/lib/modules/rp.ko" 2>>"${LOG_FILE}" || exit 1
 
 # Patch synoinfo.conf
@@ -185,13 +181,13 @@ for KEY in "${!SYNOINFO[@]}"; do
   _set_conf_kv "${RAMDISK_PATH}/etc/synoinfo.conf" "${KEY}" "${SYNOINFO[${KEY}]}" || exit 1
   _set_conf_kv "${RAMDISK_PATH}/etc.defaults/synoinfo.conf" "${KEY}" "${SYNOINFO[${KEY}]}" || exit 1
 done
-rm -f "${RAMDISK_PATH}/usr/bin/get_key_value"
 if [ ! -x "${RAMDISK_PATH}/usr/bin/get_key_value" ]; then
+  rm -f "${RAMDISK_PATH}/usr/bin/get_key_value"
   printf '#!/bin/sh\n%s\n_get_conf_kv "$@"' "$(declare -f _get_conf_kv)" >"${RAMDISK_PATH}/usr/bin/get_key_value"
   chmod a+x "${RAMDISK_PATH}/usr/bin/get_key_value"
 fi
-rm -rf "${RAMDISK_PATH}/usr/bin/set_key_value"
 if [ ! -x "${RAMDISK_PATH}/usr/bin/set_key_value" ]; then
+  rm -f "${RAMDISK_PATH}/usr/bin/set_key_value"
   printf '#!/bin/sh\n%s\n_set_conf_kv "$@"' "$(declare -f _set_conf_kv)" >"${RAMDISK_PATH}/usr/bin/set_key_value"
   chmod a+x "${RAMDISK_PATH}/usr/bin/set_key_value"
 fi
@@ -216,6 +212,7 @@ if [ -f "${USER_GRUB_CONFIG}" ] && [ -f "${USER_CONFIG_FILE}" ] && [ -f "${ORI_Z
   if [ -d "${PART1_PATH}" ]; then
     mkdir -p "${BACKUP_PATH}/p1"
     cp -rf "${PART1_PATH}/." "${BACKUP_PATH}/p1/"
+    rm -f "${BACKUP_PATH}/p1/VERSION"
   fi
   if [ -d "${PART2_PATH}" ]; then
     mkdir -p "${BACKUP_PATH}/p2"
@@ -228,19 +225,26 @@ for N in $(seq 0 7); do
   echo -e "DEVICE=eth${N}\nBOOTPROTO=dhcp\nONBOOT=yes\nIPV6INIT=auto_dhcp\nIPV6_ACCEPT_RA=1" >"${RAMDISK_PATH}/etc/sysconfig/network-scripts/ifcfg-eth${N}"
 done
 
-# Kernel 5.x patches
+# Kernel patches
+echo -e ">> Ramdisk: apply Linux ${KVER:0:1}.x fixes"
 if [ "${KVER:0:1}" = "5" ]; then
-  echo -e ">> apply Kernel 5.x Fixes"
   sed -i 's#/dev/console#/var/log/lrc#g' "${RAMDISK_PATH}/usr/bin/busybox"
   sed -i '/^echo "START/a \\nmknod -m 0666 /dev/console c 1 3' "${RAMDISK_PATH}/linuxrc.syno"
+elif [ "${KVER:0:1}" = "4" ]; then
+  cp -f "${PATCH_PATH}/iosched-trampoline.sh" "${RAMDISK_PATH}/usr/sbin/modprobe"
 fi
 
 # Broadwellntbap patches
+echo -e ">> Ramdisk: apply ${PLATFORM} fixes"
 if [ "${PLATFORM}" = "broadwellntbap" ]; then
-  echo -e ">> apply Broadwellntbap Fixes"
   sed -i 's/IsUCOrXA="yes"/XIsUCOrXA="yes"/g; s/IsUCOrXA=yes/XIsUCOrXA=yes/g' "${RAMDISK_PATH}/usr/syno/share/environments.sh"
 fi
 
+# DSM 7.3
+echo -e ">> Ramdisk: apply DSM ${PRODUCTVER:0:3} fixes"
+if [ "${PRODUCTVER:0:3}" = "7.3" ]; then
+  sed -i 's#/usr/syno/sbin/broadcom_update.sh#/usr/syno/sbin/broadcom_update.sh.arc#g' "${RAMDISK_PATH}/linuxrc.syno.impl"
+fi
 
 # Call user patch scripts
 for F in ${SCRIPTS_PATH}/*.sh; do

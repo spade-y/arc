@@ -165,6 +165,7 @@ function getSysinfo() {
     USERSYNOINFO="$(echo "${USERSYNOINFO_RAW}" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g' | sed 's/^ //;s/ $//')"
     BUILDNUM="$(readConfigKey "buildnum" "${USER_CONFIG_FILE}")"
   fi
+  ALTCONSOLE="$(readConfigKey "arc.altconsole" "${USER_CONFIG_FILE}")"
   DIRECTBOOT="$(readConfigKey "directboot" "${USER_CONFIG_FILE}")"
   LKM="$(readConfigKey "lkm" "${USER_CONFIG_FILE}")"
   KERNELLOAD="$(readConfigKey "kernelload" "${USER_CONFIG_FILE}")"
@@ -205,15 +206,15 @@ function getSysinfo() {
     MAC="$(cat /sys/class/net/${N}/address 2>/dev/null | sed 's/://g' | tr '[:upper:]' '[:lower:]')"
     while true; do
       if [ -z "$(cat /sys/class/net/${N}/carrier 2>/dev/null)" ]; then
-        TEXT+="\n   ${DRIVER} (${MAC}): DOWN"
+        TEXT+="\n  ${DRIVER} (${MAC}): DOWN"
         break
       fi
       if [ "0" = "$(cat /sys/class/net/${N}/carrier 2>/dev/null)" ]; then
-        TEXT+="\n   ${DRIVER} (${MAC}): NOT CONNECTED"
+        TEXT+="\n  ${DRIVER} (${MAC}): NOT CONNECTED"
         break
       fi
-      if [ ${COUNT} -ge ${TIMEOUT} ]; then
-        TEXT+="\n   ${DRIVER} (${MAC}): TIMEOUT"
+      if [ "${COUNT}" -ge "${TIMEOUT}" ]; then
+        TEXT+="\n  ${DRIVER} (${MAC}): TIMEOUT"
         break
       fi
       COUNT=$((${COUNT} + 1))
@@ -221,9 +222,9 @@ function getSysinfo() {
       if [ -n "${IP}" ]; then
         SPEED="$(/usr/sbin/ethtool ${N} 2>/dev/null | grep "Speed:" | awk '{print $2}')"
         if [[ "${IP}" =~ ^169\.254\..* ]]; then
-          TEXT+="\n   ${DRIVER} (${SPEED} | ${MAC}): LINK LOCAL (No DHCP server found.)"
+          TEXT+="\n  ${DRIVER} (${SPEED} | ${MAC}): LINK LOCAL (No DHCP server found.)"
         else
-          TEXT+="\n   ${DRIVER} (${SPEED} | ${MAC}): ${IP}"
+          TEXT+="\n  ${DRIVER} (${SPEED} | ${MAC}): ${IP}"
         fi
         break
       fi
@@ -236,7 +237,7 @@ function getSysinfo() {
   TEXT+="\n  Config | Build: ${CONFDONE} | ${BUILDDONE}"
   TEXT+="\n  Config Version: ${CONFIGVER}"
   TEXT+="\n  Offline Mode: ${ARCOFFLINE}"
-  [ "${ARCOFFLINE}" = "true" ] && TEXT+="\n  Offline Mode: ${ARCOFFLINE}"
+  TEXT+="\n  Switch Serialport: ${ALTCONSOLE}"
   if [ "${CONFDONE}" = "true" ]; then
     TEXT+="\n> DSM ${PRODUCTVER} (${BUILDNUM}): ${MODEL}"
     TEXT+="\n  Kernel | LKM: ${KVER} | ${LKM}"

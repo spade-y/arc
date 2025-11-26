@@ -46,36 +46,36 @@ function arc_mode() {
 ###############################################################################
 # Check for NIC and IP
 function checkNIC() {
-  # Get Amount of NIC
+  IPCON=""
   local BOOTIPWAIT="$(readConfigKey "bootipwait" "${USER_CONFIG_FILE}")"
   [ -z "${BOOTIPWAIT}" ] && BOOTIPWAIT="20"
   ETHX="$(find /sys/class/net/ -mindepth 1 -maxdepth 1 -name 'eth*' -exec basename {} \; | sort)"
   for N in ${ETHX}; do
     COUNT=0
-    DRIVER="$(basename "$(realpath "/sys/class/net/${N}/device/driver" 2>/dev/null)" 2>/dev/null)"
+    DRIVER="$(ls -ld /sys/class/net/${N}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')"
     while true; do
-      CARRIER=$(cat "/sys/class/net/${N}/carrier" 2>/dev/null)
-      if [ "${CARRIER}" = "0" ]; then
+      if [ "0" = "$(cat /sys/class/net/${N}/carrier 2>/dev/null)" ]; then
         echo -e "\r${DRIVER}: \033[1;37mNOT CONNECTED\033[0m"
         break
-      elif [ -z "${CARRIER}" ]; then
+      fi
+      if [ -z "$(cat /sys/class/net/${N}/carrier 2>/dev/null)" ]; then
         echo -e "\r${DRIVER}: \033[1;37mDOWN\033[0m"
+        break
+      fi
+      if [ "${COUNT}" -ge "${BOOTIPWAIT}" ]; then
+        echo -e "\r${DRIVER}: \033[1;37mTIMEOUT\033[0m"
         break
       fi
       COUNT=$((COUNT + 1))
       IP="$(getIP "${N}")"
       if [ -n "${IP}" ]; then
-        SPEED=$(ethtool ${N} 2>/dev/null | awk '/Speed:/ {print $2}')
+        SPEED="$(/usr/sbin/ethtool ${N} 2>/dev/null | grep "Speed:" | awk '{print $2}')"
         if echo "${IP}" | grep -q "^169\.254\."; then
           echo -e "\r${DRIVER} (${SPEED}): \033[1;37mLINK LOCAL (No DHCP server found.)\033[0m"
         else
           echo -e "\r${DRIVER} (${SPEED}): \033[1;37m${IP}\033[0m"
           [ -z "${IPCON}" ] && IPCON="${IP}"
         fi
-        break
-      fi
-      if [ "${COUNT}" -ge "${BOOTIPWAIT}" ]; then
-        echo -e "\r${DRIVER}: \033[1;37mTIMEOUT\033[0m"
         break
       fi
       sleep 1
@@ -208,7 +208,6 @@ function _sort_netif() {
     /etc/init.d/S40network start >/dev/null 2>&1
     /etc/init.d/S41dhcpcd start >/dev/null 2>&1
   fi
-  return
 }
 
 ###############################################################################
@@ -239,7 +238,6 @@ function getIP() {
     [ -z "${IP}" ] && IP=$(ip route show 2>/dev/null | sed -n 's/.* via .* src \(.*\) metric .*/\1/p' | head -1)
   fi
   echo "${IP}"
-  return
 }
 
 ###############################################################################
@@ -249,7 +247,6 @@ function findDSMRoot() {
   [ -z "${DSMROOTS}" ] && DSMROOTS="$(mdadm --detail --scan 2>/dev/null | grep -v "INACTIVE-ARRAY" | grep -E "name=SynologyNAS:0|name=DiskStation:0|name=SynologyNVR:0|name=BeeStation:0" | awk '{print $2}' | uniq)"
   [ -z "${DSMROOTS}" ] && DSMROOTS="$(lsblk -pno KNAME,PARTN,FSTYPE,FSVER,LABEL | grep -E "sd[a-z]{1,2}1" | grep -w "linux_raid_member" | grep "0.9" | awk '{print $1}')"
   echo "${DSMROOTS}"
-  return
 }
 
 ###############################################################################
@@ -262,7 +259,6 @@ function convert_netmask() {
       bits=$((${bits} + ${#binbits}))
   done
   echo "${bits}"
-  return
 }
 
 ###############################################################################
@@ -284,7 +280,6 @@ function setCmdline() {
   else
     grub-editenv ${USER_GRUBENVFILE} unset "${1}"
   fi
-  return
 }
 
 ###############################################################################
@@ -296,7 +291,6 @@ function addCmdline() {
   local CMDLINE="$(grub-editenv ${USER_GRUBENVFILE} list 2>/dev/null | grep "^${1}=" | cut -d'=' -f2-)"
   [ -n "${CMDLINE}" ] && CMDLINE="${CMDLINE} ${2}" || CMDLINE="${2}"
   setCmdline "${1}" "${CMDLINE}"
-  return
 }
 
 ###############################################################################
@@ -306,7 +300,6 @@ function delCmdline() {
   local CMDLINE="$(grub-editenv ${USER_GRUBENVFILE} list 2>/dev/null | grep "^${1}=" | cut -d'=' -f2-)"
   CMDLINE="$(echo "${CMDLINE}" | sed "s/ *${2}//; s/^[[:space:]]*//;s/[[:space:]]*$//")"
   setCmdline "${1}" "${CMDLINE}"
-  return
 }
 
 ###############################################################################
@@ -346,7 +339,6 @@ function rebootTo() {
   [ ! -f "${USER_GRUBENVFILE}" ] && grub-editenv "${USER_GRUBENVFILE}" create
   grub-editenv "${USER_GRUBENVFILE}" set next_entry="${1}"
   exec reboot
-  return
 }
 
 ###############################################################################
@@ -377,12 +369,12 @@ function copyDSMFiles() {
 function livepatch() {
   PVALID="false"
   # Patch zImage
-  echo -e ">> patching zImage..."
+  echo -e ">> patching Kernel..."
   if ${ARC_PATH}/zimage-patch.sh; then
-    echo -e ">> patching zImage successful!"
+    echo -e ">> patching Kernel successful!"
     PVALID="true"
   else
-    echo -e ">> patching zImage failed!"
+    echo -e ">> patching Kernel failed!"
     PVALID="false"
   fi
   echo
@@ -409,7 +401,6 @@ function livepatch() {
     writeConfigKey "ramdisk-hash" "${RAMDISK_HASH}" "${USER_CONFIG_FILE}"
     echo -e ">> DSM Image patched!"
   fi
-  return
 }
 
 ###############################################################################
@@ -441,7 +432,6 @@ function onlineCheck() {
   else
     writeConfigKey "arc.offline" "true" "${USER_CONFIG_FILE}"
   fi
-  return
 }
 
 ###############################################################################
@@ -466,6 +456,8 @@ function systemCheck () {
   else
     CPUFREQ="false"
   fi
+  # Check for CPU Count
+  CPUCNT="$(cat /sys/devices/system/cpu/cpu[0-9]*/topology/{core_cpus_list,thread_siblings_list} | sort -u | wc -l)"
   # Check for Arc Patch
   ARC_PATCH="$(readConfigKey "arc.patch" "${USER_CONFIG_FILE}")"
   KEYMAP="$(readConfigKey "keymap" "${USER_CONFIG_FILE}")"
@@ -473,7 +465,6 @@ function systemCheck () {
   getnetinfo
   getdiskinfo
   getmap
-  return
 }
 
 ###############################################################################
@@ -486,7 +477,6 @@ function genHWID () {
   done | sort)
   NIC_MAC="$(echo "${NIC_MACS}" | head -1)"
   echo "${CPU_ID} ${NIC_MAC}" | sha256sum | awk '{print $1}' | cut -c1-16
-  return
 }
 
 ###############################################################################
@@ -504,21 +494,6 @@ function check_port() {
 }
 
 ###############################################################################
-# Unmount disks
-function __umountNewBlDisk() {
-  umount "${TMP_PATH}/sdX1" 2>/dev/null
-  umount "${TMP_PATH}/sdX2" 2>/dev/null
-  umount "${TMP_PATH}/sdX3" 2>/dev/null
-  return
-}
-
-function __umountDSMRootDisk() {
-  umount "${TMP_PATH}/mdX"
-  rm -rf "${TMP_PATH}/mdX"
-  return
-}
-
-###############################################################################
 # bootwait SSH/Web
 function _bootwait() {
   BOOTWAIT="$(readConfigKey "bootwait" "${USER_CONFIG_FILE}")"
@@ -528,7 +503,6 @@ function _bootwait() {
   while [ "${BOOTWAIT}" -gt 0 ]; do
     sleep 1
     BOOTWAIT=$((BOOTWAIT - 1))
-    MSG="\033[1;33mAccess to SSH/Web will interrupt boot...\033[0m"
     echo -en "\r${MSG}"
     busybox w 2>/dev/null | awk '{print $1" "$2" "$4" "$5" "$6}' >WC
     if ! diff WB WC >/dev/null 2>&1; then
@@ -539,8 +513,6 @@ function _bootwait() {
     fi
   done
   rm -f WB WC
-  echo -en "\r$(printf "%$((${#MSG} * 2))s" " ")\n"
-  return
 }
 
 ###############################################################################
@@ -557,7 +529,6 @@ function fixDSMRootPart() {
       fsck "${1}" >/dev/null 2>&1
     fi
   fi
-  return
 }
 
 ###############################################################################
@@ -587,6 +558,7 @@ function readData() {
   USBCONTROLLER="$(readConfigKey "device.usbcontroller" "${USER_CONFIG_FILE}")"
 
   # Advanced Config
+  ALTCONSOLE="$(readConfigKey "arc.altconsole" "${USER_CONFIG_FILE}")"
   ARC_OFFLINE="$(readConfigKey "arc.offline" "${USER_CONFIG_FILE}")"
   BOOTIPWAIT="$(readConfigKey "bootipwait" "${USER_CONFIG_FILE}")"
   DIRECTBOOT="$(readConfigKey "directboot" "${USER_CONFIG_FILE}")"
@@ -615,19 +587,16 @@ function readData() {
   if [ "${ARC_MODE}" = "config" ] && [ "${REMOTEASSISTANCE}" = "true" ] && [ ! -f "${TMP_PATH}/remote.lock" ]; then
     remoteAssistance
   fi
-  return
 }
 
 ###############################################################################
 # Menu functions
 function write_menu() {
   echo "$1 \"$2\" " >>"${TMP_PATH}/menu"
-  return
 }
     
 function write_menu_value() {
   echo "$1 \"$2: \Z4${3:-none}\Zn\" " >>"${TMP_PATH}/menu"
-  return
 }
 
 ################################################################################
@@ -709,7 +678,6 @@ function getBoardName() {
     BOARD="not available"
   fi
   echo "${BOARD}"
-  return
 }
 
 ###############################################################################
@@ -718,11 +686,9 @@ function resetBuild() {
   writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
   BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
   rm -f "${MOD_ZIMAGE_FILE}" "${MOD_RDGZ_FILE}" >/dev/null 2>&1 || true
-  return
 }
 
 function resetBuildstatus() {
   writeConfigKey "arc.builddone" "false" "${USER_CONFIG_FILE}"
   BUILDDONE="$(readConfigKey "arc.builddone" "${USER_CONFIG_FILE}")"
-  return
 }
