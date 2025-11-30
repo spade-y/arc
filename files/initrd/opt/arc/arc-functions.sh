@@ -115,10 +115,10 @@ function arcModel() {
       RET=$?
       case ${RET} in
         0)
-          resp="$(cat "${TMP_PATH}/resp" 2>/dev/null)"
-          [ -z "${resp}" ] && return
-          if [ -s "${TMP_PATH}/${resp}_warn" ]; then
-            MSG="Your Hardware is not compatible with the selected Model!\n\n\Z1$(cat "${TMP_PATH}/${resp}_warn")\Zn\n\nDo you still want to proceed?"
+          RESP="$(cat "${TMP_PATH}/resp" 2>/dev/null)"
+          [ -z "${RESP}" ] && return
+          if [ -s "${TMP_PATH}/${RESP}_warn" ]; then
+            MSG="Your Hardware is not compatible with the selected Model!\n\n\Z1$(cat "${TMP_PATH}/${RESP}_warn")\Zn\n\nDo you still want to proceed?"
             dialog --backtitle "$(backtitle)" --title "Arc Warning" --colors \
               --yesno "${MSG}" 0 0
             RET=$?
@@ -139,8 +139,8 @@ function arcModel() {
       esac
     done
   fi
-  if [ "${ARC_MODE}" = "config" ] && [ "${MODEL}" != "${resp}" ]; then
-    MODEL="${resp}"
+  if [ "${ARC_MODE}" = "config" ] && [ "${MODEL}" != "${RESP}" ]; then
+    MODEL="${RESP}"
     writeConfigKey "addons" "{}" "${USER_CONFIG_FILE}"
     writeConfigKey "arc.confdone" "false" "${USER_CONFIG_FILE}"
     writeConfigKey "arc.remap" "" "${USER_CONFIG_FILE}"
@@ -2174,7 +2174,6 @@ function downgradeMenu() {
   (
     mkdir -p "${TMP_PATH}/mdX"
     for I in ${DSMROOTS}; do
-      fixDSMRootPart "${I}"
       T="$(blkid -o value -s TYPE "${I}" 2>/dev/null | sed 's/linux_raid_member/ext4/')"
       mount -t "${T:-ext4}" "${I}" "${TMP_PATH}/mdX"
       [ $? -ne 0 ] && continue
@@ -2203,7 +2202,6 @@ function resetPassword() {
   rm -f "${TMP_PATH}/menu" >/dev/null
   mkdir -p "${TMP_PATH}/mdX"
   for I in ${DSMROOTS}; do
-    fixDSMRootPart "${I}"
     T="$(blkid -o value -s TYPE "${I}" 2>/dev/null | sed 's/linux_raid_member/ext4/')"
     mount -t "${T:-ext4}" "${I}" "${TMP_PATH}/mdX"
     [ $? -ne 0 ] && continue
@@ -2248,7 +2246,6 @@ function resetPassword() {
   (
     mkdir -p "${TMP_PATH}/mdX"
     for I in ${DSMROOTS}; do
-      fixDSMRootPart "${I}"
       T="$(blkid -o value -s TYPE "${I}" 2>/dev/null | sed 's/linux_raid_member/ext4/')"
       mount -t "${T:-ext4}" "${I}" "${TMP_PATH}/mdX"
       [ $? -ne 0 ] && continue
@@ -2301,7 +2298,6 @@ function addNewDSMUser() {
   (
     mkdir -p "${TMP_PATH}/mdX"
     for I in ${DSMROOTS}; do
-      fixDSMRootPart "${I}"
       T="$(blkid -o value -s TYPE "${I}" 2>/dev/null | sed 's/linux_raid_member/ext4/')"
       mount -t "${T:-ext4}" "${I}" "${TMP_PATH}/mdX"
       [ $? -ne 0 ] && continue
@@ -2500,7 +2496,6 @@ function forceEnableDSMTelnetSSH() {
   (
     mkdir -p "${TMP_PATH}/mdX"
     for I in ${DSMROOTS}; do
-      fixDSMRootPart "${I}"
       T="$(blkid -o value -s TYPE "${I}" 2>/dev/null | sed 's/linux_raid_member/ext4/')"
       mount -t "${T:-ext4}" "${I}" "${TMP_PATH}/mdX"
       [ $? -ne 0 ] && continue
@@ -2544,7 +2539,6 @@ function removeBlockIPDB {
   (
     mkdir -p "${TMP_PATH}/mdX"
     for I in ${DSMROOTS}; do
-      fixDSMRootPart "${I}"
       T="$(blkid -o value -s TYPE "${I}" 2>/dev/null | sed 's/linux_raid_member/ext4/')"
       mount -t "${T:-ext4}" "${I}" "${TMP_PATH}/mdX"
       [ $? -ne 0 ] && continue
@@ -2576,7 +2570,6 @@ function disablescheduledTasks {
   (
     mkdir -p "${TMP_PATH}/mdX"
     for I in ${DSMROOTS}; do
-      fixDSMRootPart "${I}"
       T="$(blkid -o value -s TYPE "${I}" 2>/dev/null | sed 's/linux_raid_member/ext4/')"
       mount -t "${T:-ext4}" "${I}" "${TMP_PATH}/mdX"
       [ $? -ne 0 ] && continue
@@ -2822,7 +2815,6 @@ function greplogs() {
   if [ -n "${DSMROOTS}" ]; then
     mkdir -p "${TMP_PATH}/mdX"
     for I in ${DSMROOTS}; do
-      fixDSMRootPart "${I}"
       T="$(blkid -o value -s TYPE "${I}" 2>/dev/null | sed 's/linux_raid_member/ext4/')"
       mount -t "${T:-ext4}" "${I}" "${TMP_PATH}/mdX"
       [ $? -ne 0 ] && continue
@@ -2991,7 +2983,6 @@ function resetDSMNetwork {
   (
     mkdir -p "${TMP_PATH}/mdX"
     for I in ${DSMROOTS}; do
-      fixDSMRootPart "${I}"
       T="$(blkid -o value -s TYPE "${I}" 2>/dev/null | sed 's/linux_raid_member/ext4/')"
       mount -t "${T:-ext4}" "${I}" "${TMP_PATH}/mdX"
       [ $? -ne 0 ] && continue
@@ -3844,7 +3835,6 @@ function recoverDSM() {
   [ -z "${DSMROOTS}" ] && return
   mkdir -p "${TMP_PATH}/mdX"
   for I in ${DSMROOTS}; do
-    fixDSMRootPart "${I}"
     T="$(blkid -o value -s TYPE "${I}" 2>/dev/null | sed 's/linux_raid_member/ext4/')"
     mount -t "${T:-ext4}" "${I}" "${TMP_PATH}/mdX"
     if [ $? -ne 0 ]; then
@@ -3900,5 +3890,43 @@ function recoverDSM() {
     --aspect 18 --infobox "Restore successful! -> Reload Arc Init now" 3 50
     sleep 2
     rm -f "${HOME}/.initialized" && exec init.sh
+  fi
+}
+
+###############################################################################
+# Clean DSM Root
+function cleanDSMRoot() {
+  DSMROOTS="$(findDSMRoot)"
+  [ -z "${DSMROOTS}" ] && return
+  mkdir -p "${TMP_PATH}/mdX"
+  CLEAN=0
+  for I in ${DSMROOTS}; do
+    T="$(blkid -o value -s TYPE "${I}" 2>/dev/null | sed 's/linux_raid_member/ext4/')"
+    mount -t "${T:-ext4}" "${I}" "${TMP_PATH}/mdX"
+    if [ $? -ne 0 ]; then
+      dialog --backtitle "$(backtitle)" --title "Mount Error" \
+        --msgbox "Failed to mount ${I}. Cleanup is not possible." 0 0
+      umount -f "${TMP_PATH}/mdX" 2>/dev/null
+      return
+    fi
+    if [ -d "${TMP_PATH}/mdX/etc" ]; then
+      for DIR in "@autoupdate" "upd@te" ".log.junior"; do
+        PATH="${TMP_PATH}/mdX/${DIR}/*"
+        if ls ${PATH} 1>/dev/null 2>&1; then
+          rm -rf ${TMP_PATH}/mdX/${DIR}/*
+          CLEAN=1
+        fi
+      done
+      sync
+      sleep 2
+      umount -f "${TMP_PATH}/mdX" 2>/dev/null
+    fi
+  done
+  if [ "${CLEAN}" -eq 0 ]; then
+    dialog --backtitle "$(backtitle)" --title "Cleanup" \
+    --infobox "Nothing to clean." 0 0
+  else
+    dialog --backtitle "$(backtitle)" --title "Cleanup" \
+    --infobox "Cleanup completed successfully." 0 0
   fi
 }

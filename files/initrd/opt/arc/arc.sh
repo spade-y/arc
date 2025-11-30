@@ -181,6 +181,7 @@ elif [ "${ARC_MODE}" = "config" ]; then
         write_menu "J" "Reset Network Config"
         write_menu "T" "Delete Scheduled Tasks"
         write_menu "r" "Delete Blocked IP Database"
+        write_menu "G" "Clean DSM Update Cache"
         write_menu "R" "Force enable SSH"
         write_menu_value "O" "Official Drivers" "$( [ "${ODP}" = "true" ] && echo "enabled" || echo "disabled" )"
         write_menu "l" "Edit User Config"
@@ -358,6 +359,7 @@ elif [ "${ARC_MODE}" = "config" ]; then
           J) resetDSMNetwork; NEXT="J" ;;
           T) disablescheduledTasks; NEXT="T" ;;
           r) removeBlockIPDB; NEXT="r" ;;
+          G) cleanDSMRoot; NEXT="G" ;;
           R) forceEnableDSMTelnetSSH; NEXT="R" ;;
           O)
             [ "${ODP}" = "false" ] && ODP='true' || ODP='false'
