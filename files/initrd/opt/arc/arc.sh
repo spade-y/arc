@@ -149,7 +149,7 @@ elif [ "${ARC_MODE}" = "config" ]; then
           write_menu "o" "DTS Map Options"
         fi
       else
-        write_menu "5" "\Z1Show Arc DSM Options\Zn"
+        write_menu "5" "\Z1Show Arc Options\Zn"
       fi
 
       if [ "${BOOTOPTS}" = "true" ]; then
